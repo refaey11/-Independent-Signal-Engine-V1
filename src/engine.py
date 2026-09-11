@@ -2,21 +2,38 @@
 from .indicators import rsi, atr, adx
 from .candles_nison import nison_score
 from .market_structure import structure_score
-from .pivots_sr import sr_score
+from .pivots_sr import sr_score, pivot_score
 from .volume_flow import volume_score, open_interest_score
 from .trend_geometry import trend_geometry_score
 from .parabolic_sar import psar_score
 from .mtf import mtf_score
 
-DEFAULT_WEIGHTS = {"nison":20, "structure":15, "sr":15, "momentum":10, "trend":10, "volume":10, "geometry":5, "sar":5, "mtf":10}
+DEFAULT_WEIGHTS = {
+    "nison": 20, "structure": 15, "sr": 15, "pivot": 10,
+    "momentum": 10, "trend": 10, "volume": 5, "geometry": 5,
+    "sar": 5, "mtf": 5,
+}
 
 
-def generate_signal(df, frames=None, weights=None, buy_threshold=70, sell_threshold=-70):
+def _quality(score, buy_threshold, sell_threshold):
+    strength = abs(float(score))
+    active = max(abs(float(buy_threshold)), abs(float(sell_threshold)))
+    if strength < active:
+        return "C"
+    if strength >= 90:
+        return "A+"
+    if strength >= 80:
+        return "A"
+    return "B"
+
+
+def generate_signal(df, frames=None, weights=None, buy_threshold=70, sell_threshold=-70, sl_atr=1.5, tp_atr=3.0):
     w = {**DEFAULT_WEIGHTS, **(weights or {})}
     components = {}
     components["nison"] = nison_score(df)
     components["structure"] = structure_score(df)
     components["sr"] = sr_score(df)
+    components["pivot"] = pivot_score(df)
     rv = float(rsi(df).iloc[-1])
     components["momentum"] = 1 if rv > 55 else -1 if rv < 45 else 0
     av, pdi, mdi = adx(df)
@@ -29,8 +46,12 @@ def generate_signal(df, frames=None, weights=None, buy_threshold=70, sell_thresh
     components["mtf"] = mtf_direction
     score = sum(components[k] * w[k] for k in components)
     signal = "BUY" if score >= buy_threshold else "SELL" if score <= sell_threshold else "WAIT"
+    quality = _quality(score, buy_threshold, sell_threshold)
     a = float(atr(df).iloc[-1]); price = float(df.close.iloc[-1])
-    return {"signal": signal, "score": score, "components": components, "mtf": mtf_detail,
-            "open_interest_score": open_interest_score(df), "close": price, "atr": a,
-            "sl": price - 1.5*a if signal == "BUY" else price + 1.5*a if signal == "SELL" else None,
-            "tp": price + 3*a if signal == "BUY" else price - 3*a if signal == "SELL" else None}
+    return {
+        "signal": signal, "quality": quality, "score": score,
+        "components": components, "mtf": mtf_detail,
+        "open_interest_score": open_interest_score(df), "close": price, "atr": a,
+        "sl": price - sl_atr*a if signal == "BUY" else price + sl_atr*a if signal == "SELL" else None,
+        "tp": price + tp_atr*a if signal == "BUY" else price - tp_atr*a if signal == "SELL" else None,
+    }
