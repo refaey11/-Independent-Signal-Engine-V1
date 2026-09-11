@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -13,7 +14,10 @@ COLUMNS = ["timestamp", "open", "high", "low", "close", "volume", "close_time", 
 
 
 def ms(value: str) -> int:
-    return int(datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=timezone.utc).timestamp() * 1000)
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000)
 
 
 def download(symbol: str, interval: str, start: str, end: str, output: str) -> None:
@@ -41,6 +45,7 @@ def download(symbol: str, interval: str, start: str, end: str, output: str) -> N
     df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric)
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     df[["timestamp", "open", "high", "low", "close", "volume"]].to_csv(output, index=False)
     print(f"Wrote {len(df)} rows to {output}")
 
