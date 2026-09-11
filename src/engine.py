@@ -1,4 +1,4 @@
-"""Independent multi-factor signal engine. BUY/SELL are gated; otherwise WAIT."""
+"""Independent multi-factor signal engine. BUY/SELL are context-gated; otherwise WAIT."""
 from .indicators import rsi, atr, adx
 from .candles_nison import nison_score
 from .market_structure import structure_score
@@ -7,6 +7,7 @@ from .volume_flow import volume_score, open_interest_score
 from .trend_geometry import trend_geometry_score
 from .parabolic_sar import psar_score
 from .mtf import mtf_score
+from .signal_gate import gate_signal
 
 DEFAULT_WEIGHTS = {
     "nison": 20, "structure": 15, "sr": 15, "pivot": 10,
@@ -15,14 +16,14 @@ DEFAULT_WEIGHTS = {
 }
 
 
-def _quality(score, buy_threshold, sell_threshold):
+def _quality(score, signal, buy_threshold, sell_threshold):
     strength = abs(float(score))
     active = max(abs(float(buy_threshold)), abs(float(sell_threshold)))
-    if strength < active:
+    if signal == "WAIT":
         return "C"
     if strength >= 90:
         return "A+"
-    if strength >= 80:
+    if strength >= max(80, active):
         return "A"
     return "B"
 
@@ -45,8 +46,11 @@ def generate_signal(df, frames=None, weights=None, buy_threshold=70, sell_thresh
     mtf_direction, mtf_detail = mtf_score(frames or {})
     components["mtf"] = mtf_direction
     score = sum(components[k] * w[k] for k in components)
-    signal = "BUY" if score >= buy_threshold else "SELL" if score <= sell_threshold else "WAIT"
-    quality = _quality(score, buy_threshold, sell_threshold)
+
+    # The contextual gate is the hard directional decision. A large additive
+    # score cannot override a missing regime or Nison/momentum confirmation.
+    signal = gate_signal(components)
+    quality = _quality(score, signal, buy_threshold, sell_threshold)
     a = float(atr(df).iloc[-1]); price = float(df.close.iloc[-1])
     return {
         "signal": signal, "quality": quality, "score": score,
