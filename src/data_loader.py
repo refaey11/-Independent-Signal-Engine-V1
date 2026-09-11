@@ -21,6 +21,7 @@ def normalize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize common column names and validate an OHLC time series.
 
     Missing volume/open-interest stay NaN and are never interpreted as zero.
+    A source ``volume_available`` flag is preserved when supplied.
     """
     out = df.copy()
     out = out.rename(columns={c: c.strip().lower().replace(" ", "_") for c in out.columns})
@@ -47,6 +48,11 @@ def normalize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
     for col in BASE_COLUMNS + OPTIONAL_COLUMNS:
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce")
+    if "volume_available" in out.columns:
+        raw = out["volume_available"]
+        out["volume_available"] = raw.astype("boolean")
+        if "volume" in out.columns:
+            out.loc[out["volume_available"] != True, "volume"] = float("nan")
 
     out = out.sort_index()
     out = out[~out.index.duplicated(keep="last")]
@@ -58,11 +64,27 @@ def normalize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
-    """Resample OHLCV/OI without forward-filling market observations."""
+    """Resample OHLCV/OI without forward-filling market observations.
+
+    Volume is marked available only when every source bar in the aggregate has
+    usable volume. Partial/missing volume remains NaN rather than becoming zero.
+    """
     df = normalize_ohlc(df)
     pandas_rule = _RULES.get(rule, rule)
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "open_interest": "last"}
     out = df.resample(pandas_rule, label="right", closed="right").agg(agg)
+
+    if "volume_available" in df.columns:
+        availability = df["volume_available"].resample(pandas_rule, label="right", closed="right").agg(
+            lambda s: bool(len(s) and s.notna().all() and s.astype(bool).all())
+        )
+        out["volume_available"] = availability.astype("boolean")
+        out.loc[~out["volume_available"], "volume"] = float("nan")
+    elif out["volume"].isna().all():
+        out["volume_available"] = pd.Series(False, index=out.index, dtype="boolean")
+    else:
+        out["volume_available"] = out["volume"].notna().astype("boolean")
+
     return out.dropna(subset=BASE_COLUMNS)
 
 
