@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
+
+# Large market-data and generated research files stay outside Git history.
+data/
+research_*.json
