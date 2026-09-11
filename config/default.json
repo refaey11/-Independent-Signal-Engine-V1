@@ -1,0 +1,6 @@
+{
+  "timeframes": ["5m", "15m", "30m", "1H", "4H", "1D"],
+  "signal": {"buy_threshold": 70, "sell_threshold": -70},
+  "risk": {"atr_period": 14, "sl_atr": 1.5, "tp_atr": 3.0},
+  "weights": {"nison": 20, "structure": 15, "support_resistance": 15, "pivot": 10, "trend": 10, "momentum": 10, "volume": 10, "mtf": 10}
+}
