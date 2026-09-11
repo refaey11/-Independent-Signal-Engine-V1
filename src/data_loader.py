@@ -9,25 +9,23 @@ import pandas as pd
 BASE_COLUMNS = ["open", "high", "low", "close"]
 OPTIONAL_COLUMNS = ["volume", "open_interest"]
 TIMEFRAMES = ["5m", "15m", "30m", "1H", "4H", "1D"]
+_RULES = {"5m": "5min", "15m": "15min", "30m": "30min", "1H": "1h", "4H": "4h", "1D": "1D"}
 
 
 def load_csv(path: str | Path) -> pd.DataFrame:
     """Load, normalize, validate and chronologically sort OHLC data from CSV."""
-    df = pd.read_csv(path)
-    return normalize_ohlc(df)
+    return normalize_ohlc(pd.read_csv(path))
 
 
 def normalize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
     """Normalize common column names and validate an OHLC time series.
 
-    Volume and open interest remain NaN when absent; they are never converted to zero.
+    Missing volume/open-interest stay NaN and are never interpreted as zero.
     """
     out = df.copy()
-    rename = {c: c.strip().lower().replace(" ", "_") for c in out.columns}
-    out = out.rename(columns=rename)
-
+    out = out.rename(columns={c: c.strip().lower().replace(" ", "_") for c in out.columns})
     aliases = {
-        "timestamp": "timestamp", "datetime": "timestamp", "date": "timestamp", "time": "timestamp",
+        "datetime": "timestamp", "date": "timestamp", "time": "timestamp",
         "open_price": "open", "high_price": "high", "low_price": "low", "close_price": "close",
         "tick_volume": "volume", "openinterest": "open_interest", "oi": "open_interest",
     }
@@ -53,27 +51,22 @@ def normalize_ohlc(df: pd.DataFrame) -> pd.DataFrame:
     out = out.sort_index()
     out = out[~out.index.duplicated(keep="last")]
     out = out.dropna(subset=BASE_COLUMNS)
-
     for col in OPTIONAL_COLUMNS:
         if col not in out.columns:
             out[col] = float("nan")
-
     return out
 
 
 def resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     """Resample OHLCV/OI without forward-filling market observations."""
     df = normalize_ohlc(df)
-    agg = {
-        "open": "first", "high": "max", "low": "min", "close": "last",
-        "volume": "sum", "open_interest": "last",
-    }
-    out = df.resample(rule, label="right", closed="right").agg(agg)
-    out = out.dropna(subset=BASE_COLUMNS)
-    return out
+    pandas_rule = _RULES.get(rule, rule)
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum", "open_interest": "last"}
+    out = df.resample(pandas_rule, label="right", closed="right").agg(agg)
+    return out.dropna(subset=BASE_COLUMNS)
 
 
 def build_timeframes(df: pd.DataFrame, timeframes: Iterable[str] = TIMEFRAMES) -> Dict[str, pd.DataFrame]:
-    """Build the six requested timeframes from one base series."""
+    """Build requested timeframes from one base series."""
     base = normalize_ohlc(df)
     return {tf: resample_ohlcv(base, tf) for tf in timeframes}
