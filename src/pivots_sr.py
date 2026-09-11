@@ -22,15 +22,20 @@ def pivot_score(df):
     return 0
 
 
-def sr_score(df, tolerance=0.002):
-    """Causal support/resistance proximity score from prior bars only."""
-    if len(df) < 10:
+def sr_score(df, lookback=20):
+    """Causal support/resistance breakout context from prior completed bars only.
+
+    A breakout above the prior rolling high is bullish; a break below the prior
+    rolling low is bearish. Otherwise the level is neutral. This avoids the
+    previous implementation's systematic short bias near nearby historical lows.
+    """
+    if len(df) < lookback + 1:
         return 0
-    price = float(df.close.iloc[-1])
-    levels = []
-    for i in range(max(0, len(df)-50), len(df)-1):
-        levels += [float(df.high.iloc[i]), float(df.low.iloc[i])]
-    near = [x for x in levels if abs(x-price)/price <= tolerance]
-    if not near:
-        return 0
-    return 1 if price >= max(near) else -1
+    price = float(df["close"].iloc[-1])
+    resistance = float(df["high"].iloc[-lookback-1:-1].max())
+    support = float(df["low"].iloc[-lookback-1:-1].min())
+    if price > resistance:
+        return 1
+    if price < support:
+        return -1
+    return 0
